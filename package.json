@@ -1,7 +1,7 @@
 {
   "name": "foldersort",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -39,6 +39,7 @@
   "build": {
     "appId": "com.wagicoding.foldersort",
     "productName": "FolderSort",
+    "icon": "public/icon.ico",
     "directories": {
       "output": "release"
     },
