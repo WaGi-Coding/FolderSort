@@ -45,9 +45,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/**/*",
       "package.json"
     ],
     "win": {
+      "icon": "public/icon.ico",
       "target": [
         "nsis"
       ]

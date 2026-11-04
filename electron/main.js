@@ -10,6 +10,7 @@ function createWindow() {
     minWidth: 590,
     minHeight: 515,
     title: 'FolderSort',
+    icon: path.join(__dirname, '../public/icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
