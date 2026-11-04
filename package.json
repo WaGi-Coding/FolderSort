@@ -49,8 +49,7 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "nsis-web"
+        "nsis"
       ]
     }
   }
