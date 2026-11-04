@@ -12,7 +12,7 @@
 ---
 
 <p align="center">
-  <img src="https://i.imgur.com/YuHi31p.png">
+  <img src="https://i.imgur.com/YuHi31p.png" width="300">
 </p>
 
 **FolderSort** is a modern, responsive desktop application built for local batch renaming and sorting of images. It combines the familiar flexibility of the Windows Explorer (such as dynamic zooming and versatile sorting criteria) with a fast, modern user interface.
