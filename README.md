@@ -1,4 +1,19 @@
 # 📂 FolderSort
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/WaGi-Coding/FolderSort?label=latest%20release&style=for-the-badge)
+![GitHub all releases](https://img.shields.io/github/downloads/WaGi-Coding/FolderSort/total?label=Github%20Release%20Downloads&style=for-the-badge)
+
+![GitHub Repo stars](https://img.shields.io/github/stars/WaGi-Coding/FolderSort?style=social)
+
+
+<p align="center">
+  <a href="https://github.com/WaGi-Coding/FolderSort/releases/"><img alt="Download" src="https://i.imgur.com/IMSXFnA.png"/></a>
+</p>
+
+---
+
+<p align="center">
+  <img src="https://i.imgur.com/YuHi31p.png">
+</p>
 
 **FolderSort** is a modern, responsive desktop application built for local batch renaming and sorting of images. It combines the familiar flexibility of the Windows Explorer (such as dynamic zooming and versatile sorting criteria) with a fast, modern user interface.
 
