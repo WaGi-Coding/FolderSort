@@ -44,7 +44,7 @@ https://github.com/user-attachments/assets/80f73abf-a4fd-490d-81b2-4e827396b9c7
    * Use the **"Sort by"** dropdown menu to automatically sort images by criteria like Name or EXIF Capture Date.
    * Drag and drop image cards to any custom position (this automatically switches the mode to `CUSTOM`).
 3. **Adjust View:** Hold `Ctrl` and scroll with your mouse wheel to make the image cards larger or smaller.
-4. **Apply Renaming:** Optionally define a **Prefix** or **Suffix**, then click **"Apply changes to disk"** in the bottom right corner to save changes permanently.
+4. **Apply Renaming:** Optionally define a **Prefix** or **Suffix**, then click **"Apply changes to disk"** in the bottom right corner to save changes permanently. Enable **"Keep original name"** to append each file's current name (without its extension) after the number and suffix. For example, `holiday.jpg` becomes `image_01_holiday.jpg`. If the suffix is empty when this option is enabled, `_` is added automatically; disabling the option removes it again if it is the only suffix.
 
 ---
 
