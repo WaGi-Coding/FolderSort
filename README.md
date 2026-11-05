@@ -45,6 +45,7 @@ https://github.com/user-attachments/assets/80f73abf-a4fd-490d-81b2-4e827396b9c7
    * Drag and drop image cards to any custom position (this automatically switches the mode to `CUSTOM`).
 3. **Adjust View:** Hold `Ctrl` and scroll with your mouse wheel to make the image cards larger or smaller.
 4. **Apply Renaming:** Optionally define a **Prefix** or **Suffix**, then click **"Apply changes to disk"** in the bottom right corner to save changes permanently. Enable **"Keep original name"** to append each file's current name (without its extension) after the number and suffix. For example, `holiday.jpg` becomes `image_01_holiday.jpg`. If the suffix is empty when this option is enabled, `_` is added automatically; disabling the option removes it again if it is the only suffix.
+5. **Updates:** Use **"Check for updates"** to check manually, or enable **"Automatic updates"** to check when the app starts. Available updates download and install automatically, then FolderSort restarts.
 
 ---
 
@@ -79,6 +80,10 @@ To generate a standalone Windows application installer, the project utilizes `el
    npm run pack
    ```
 2. Once completed successfully, you will find the finished installer executable inside the newly created **`release`** folder.
+
+### Publishing a GitHub Release
+
+Set the package version to match the release tag (for example, `1.0.4`), run `npm run pack`, and create the release manually on GitHub with the same tag. Attach the generated `FolderSort.Setup.<version>.exe` asset. The app checks the public latest release and requires no GitHub token.
 
 ---
 

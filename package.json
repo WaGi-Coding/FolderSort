@@ -1,7 +1,7 @@
 {
   "name": "foldersort",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -57,6 +57,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "artifactName": "FolderSort.Setup.${version}.${ext}",
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico"
     }

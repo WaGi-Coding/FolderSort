@@ -3,7 +3,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FolderOpen, ArrowUpDown, Check, Settings2, ArrowUp, ArrowDown, ChevronDown, Sun, Moon } from 'lucide-react';
+import { FolderOpen, ArrowUpDown, Check, Settings2, ArrowUp, ArrowDown, ChevronDown, Sun, Moon, RotateCcw, RefreshCw } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -11,6 +11,8 @@ declare global {
       openDirectory: () => Promise<string | null>;
       readImages: (folderPath: string) => Promise<{ success: boolean; images: any[]; error?: string }>;
       renameFiles: (data: { folderPath: string; items: any[]; prefix: string; postfix: string; padding: number; keepOriginalName: boolean }) => Promise<{ success: boolean; error?: string }>;
+      checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
+      onUpdateStatus: (callback: (status: { status: string; message: string; progress?: number }) => void) => () => void;
     };
   }
 }
@@ -29,6 +31,101 @@ interface ImageItem {
 type SortCriterion = 'name' | 'exifDate' | 'type' | 'size' | 'birthtime' | 'mtime';
 type SortOrder = 'asc' | 'desc';
 type ThemeMode = 'light' | 'dark';
+interface AppPreferences {
+  folderPath: string;
+  prefix: string;
+  postfix: string;
+  keepOriginalName: boolean;
+  manualPaddingOffset: number;
+  theme: ThemeMode;
+  gridCols: number;
+  sortCriterion: SortCriterion;
+  sortOrder: SortOrder;
+  automaticUpdates: boolean;
+}
+
+const preferencesKey = 'foldersort.preferences';
+
+function defaultPreferences(): AppPreferences {
+  return {
+    folderPath: '',
+    prefix: 'image_',
+    postfix: '',
+    keepOriginalName: false,
+    manualPaddingOffset: 0,
+    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+    gridCols: 6,
+    sortCriterion: 'name',
+    sortOrder: 'asc',
+    automaticUpdates: false,
+  };
+}
+
+function loadPreferences(): AppPreferences {
+  const defaults = defaultPreferences();
+  try {
+    const saved = JSON.parse(localStorage.getItem(preferencesKey) || '{}');
+    return {
+      ...defaults,
+      ...saved,
+      folderPath: typeof saved.folderPath === 'string' ? saved.folderPath : defaults.folderPath,
+      prefix: typeof saved.prefix === 'string' ? saved.prefix : defaults.prefix,
+      postfix: typeof saved.postfix === 'string' ? saved.postfix : defaults.postfix,
+      keepOriginalName: typeof saved.keepOriginalName === 'boolean' ? saved.keepOriginalName : defaults.keepOriginalName,
+      manualPaddingOffset: Number.isFinite(saved.manualPaddingOffset) ? Math.max(0, Math.min(5, saved.manualPaddingOffset)) : defaults.manualPaddingOffset,
+      theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : defaults.theme,
+      gridCols: Number.isFinite(saved.gridCols) ? Math.max(2, Math.min(12, saved.gridCols)) : defaults.gridCols,
+      sortCriterion: ['name', 'exifDate', 'type', 'size', 'birthtime', 'mtime'].includes(saved.sortCriterion) ? saved.sortCriterion : defaults.sortCriterion,
+      sortOrder: saved.sortOrder === 'desc' ? 'desc' : defaults.sortOrder,
+      automaticUpdates: typeof saved.automaticUpdates === 'boolean' ? saved.automaticUpdates : defaults.automaticUpdates,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function getRetainedBaseName(originalName: string, extension: string, prefix: string, postfix: string) {
+  const baseName = originalName.slice(0, -extension.length);
+  if (!prefix || !baseName.startsWith(prefix)) return baseName;
+
+  const number = baseName.slice(prefix.length).match(/^\d+/)?.[0];
+  if (!number) return baseName;
+
+  const remainder = baseName.slice(prefix.length + number.length);
+  if (postfix && remainder.length > 0 && !remainder.startsWith(postfix)) return baseName;
+  return postfix && remainder.startsWith(postfix) ? remainder.slice(postfix.length) : remainder;
+}
+
+function applySorting(items: ImageItem[], criterion: SortCriterion, order: SortOrder) {
+  return [...items].sort((a, b) => {
+    let comparison = 0;
+    switch (criterion) {
+      case 'name':
+        comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
+        break;
+      case 'type':
+        comparison = a.extension.localeCompare(b.extension);
+        if (comparison === 0) comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
+        break;
+      case 'size':
+        comparison = a.size - b.size;
+        break;
+      case 'exifDate':
+        comparison = a.exifDate - b.exifDate;
+        break;
+      case 'birthtime':
+        comparison = a.birthtime - b.birthtime;
+        break;
+      case 'mtime':
+        comparison = a.mtime - b.mtime;
+        break;
+      default:
+        comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
+        break;
+    }
+    return order === 'asc' ? comparison : -comparison;
+  });
+}
 
 function SortableImageCard({ item, previewName, index, version }: { item: ImageItem; previewName: string; index: number; version: number }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id });
@@ -49,28 +146,29 @@ function SortableImageCard({ item, previewName, index, version }: { item: ImageI
 }
 
 export default function App() {
-  const [folderPath, setFolderPath] = useState<string>('');
+  const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
+  const { folderPath, prefix, postfix, keepOriginalName, manualPaddingOffset, theme, gridCols, sortCriterion, sortOrder, automaticUpdates } = preferences;
+  const updatePreference = <K extends keyof AppPreferences,>(key: K, value: AppPreferences[K]) => {
+    setPreferences((current) => ({ ...current, [key]: value }));
+  };
   const [images, setImages] = useState<ImageItem[]>([]);
   const [sortMode, setSortMode] = useState<'sorted' | 'custom'>('sorted');
 
-  const [sortCriterion, setSortCriterion] = useState<SortCriterion>('name');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
-
-  // Initialisiert direkt mit dem aktuellen System-Modus ('dark' oder 'light') als Startwert
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState<boolean>(false);
-
-  const [prefix, setPrefix] = useState<string>('image_');
-  const [postfix, setPostfix] = useState<string>('');
-  const [keepOriginalName, setKeepOriginalName] = useState<boolean>(false);
-  const [manualPaddingOffset, setManualPaddingOffset] = useState<number>(0);
-
-  const [gridCols, setGridCols] = useState<number>(6);
+  const [updateStatus, setUpdateStatus] = useState<string>('');
   // Chromium cached file:// images by path; renamed files would show stale content
   const [imageVersion, setImageVersion] = useState<number>(0);
+
+  useEffect(() => {
+    localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+  }, [preferences]);
+
+  useEffect(() => window.electronAPI.onUpdateStatus((status) => setUpdateStatus(status.message)), []);
+
+  useEffect(() => {
+    if (automaticUpdates) void window.electronAPI.checkForUpdates();
+  }, [automaticUpdates]);
 
   // Theme-Logik
   useEffect(() => {
@@ -86,13 +184,10 @@ export default function App() {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        setGridCols((prev) => {
-          if (e.deltaY < 0) {
-            return Math.max(2, prev - 1);
-          } else {
-            return Math.min(12, prev + 1);
-          }
-        });
+        setPreferences((current) => ({
+          ...current,
+          gridCols: e.deltaY < 0 ? Math.max(2, current.gridCols - 1) : Math.min(12, current.gridCols + 1),
+        }));
       }
     };
 
@@ -105,49 +200,28 @@ export default function App() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const applySorting = (items: ImageItem[], criterion: SortCriterion, order: SortOrder) => {
-    const sorted = [...items].sort((a, b) => {
-      let comparison = 0;
-      switch (criterion) {
-        case 'name':
-          comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
-          break;
-        case 'type':
-          comparison = a.extension.localeCompare(b.extension);
-          if (comparison === 0) {
-            comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
-          }
-          break;
-        case 'size':
-          comparison = a.size - b.size;
-          break;
-        case 'exifDate':
-          comparison = a.exifDate - b.exifDate;
-          break;
-        case 'birthtime':
-          comparison = a.birthtime - b.birthtime;
-          break;
-        case 'mtime':
-          comparison = a.mtime - b.mtime;
-          break;
-        default:
-          comparison = a.originalName.localeCompare(b.originalName, undefined, { numeric: true });
-          break;
+  useEffect(() => {
+    if (!folderPath) return;
+    let active = true;
+    window.electronAPI.readImages(folderPath).then((res) => {
+      if (active && res.success) {
+        setImages(applySorting(res.images, sortCriterion, sortOrder));
+        setSortMode('sorted');
       }
-      return order === 'asc' ? comparison : -comparison;
     });
-    return sorted;
-  };
+    return () => { active = false; };
+  }, [folderPath, sortCriterion, sortOrder]);
 
   const handleOpenFolder = async () => {
     const path = await window.electronAPI.openDirectory();
     if (path) {
-      setFolderPath(path);
-      const res = await window.electronAPI.readImages(path);
-      if (res.success) {
-        const sorted = applySorting(res.images, sortCriterion, sortOrder);
-        setImages(sorted);
-        setSortMode('sorted');
+      updatePreference('folderPath', path);
+      if (path === folderPath) {
+        const res = await window.electronAPI.readImages(path);
+        if (res.success) {
+          setImages(applySorting(res.images, sortCriterion, sortOrder));
+          setSortMode('sorted');
+        }
       }
     }
   };
@@ -156,11 +230,11 @@ export default function App() {
     let newOrder = sortOrder;
     if (sortCriterion === criterion) {
       newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-      setSortOrder(newOrder);
+      updatePreference('sortOrder', newOrder);
     } else {
-      setSortCriterion(criterion);
+      updatePreference('sortCriterion', criterion);
       newOrder = 'asc';
-      setSortOrder('asc');
+      updatePreference('sortOrder', 'asc');
     }
 
     const sorted = applySorting(images, criterion, newOrder);
@@ -171,7 +245,7 @@ export default function App() {
 
   const toggleOrder = () => {
     const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortOrder(newOrder);
+    updatePreference('sortOrder', newOrder);
     const sorted = applySorting(images, sortCriterion, newOrder);
     setImages(sorted);
     setSortMode('sorted');
@@ -198,7 +272,7 @@ export default function App() {
     const map = new Map<string, string>();
     images.forEach((item, index) => {
       const paddedNum = String(index + 1).padStart(effectivePadding, '0');
-      const originalBaseName = item.originalName.slice(0, -item.extension.length);
+      const originalBaseName = getRetainedBaseName(item.originalName, item.extension, prefix, postfix);
       map.set(item.id, `${prefix}${paddedNum}${postfix}${keepOriginalName ? originalBaseName : ''}${item.extension}`);
     });
     return map;
@@ -231,6 +305,19 @@ export default function App() {
     }
   };
 
+  const handleReset = () => {
+    setPreferences(defaultPreferences());
+    setImages([]);
+    setSortMode('sorted');
+    setUpdateStatus('');
+  };
+
+  const handleCheckForUpdates = async () => {
+    setUpdateStatus('Checking for updates...');
+    const result = await window.electronAPI.checkForUpdates();
+    if (!result.success && result.error) setUpdateStatus(result.error);
+  };
+
   const gridClassStyle = {
     gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
   };
@@ -254,6 +341,9 @@ export default function App() {
           <button onClick={handleOpenFolder} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition cursor-pointer">
             <FolderOpen size={18} /> Open Folder
           </button>
+          <button onClick={handleReset} className="p-2 border dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" title="Reset all settings and selected folder" aria-label="Reset all settings and selected folder">
+            <RotateCcw size={16} />
+          </button>
           <span className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-xs" title={folderPath}>
             {folderPath || 'No folder selected'}
           </span>
@@ -262,17 +352,17 @@ export default function App() {
         <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-700 p-2 rounded-lg">
           <div className="flex items-center gap-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">Prefix:</span>
-            <input type="text" value={prefix} onChange={(e) => setPrefix(e.target.value)} className="w-20 px-2 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded" />
+            <input type="text" value={prefix} onChange={(e) => updatePreference('prefix', e.target.value)} className="w-20 px-2 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded" />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">Suffix:</span>
-            <input type="text" value={postfix} onChange={(e) => setPostfix(e.target.value)} className="w-16 px-2 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded" />
+            <input type="text" value={postfix} onChange={(e) => updatePreference('postfix', e.target.value)} className="w-16 px-2 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded" />
             <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap" title="Append each file's current name before its extension">
               <input type="checkbox" checked={keepOriginalName} onChange={(e) => {
                 const enabled = e.target.checked;
-                if (enabled && !postfix) setPostfix('_');
-                if (!enabled && postfix === '_') setPostfix('');
-                setKeepOriginalName(enabled);
+                if (enabled && !postfix) updatePreference('postfix', '_');
+                if (!enabled && postfix === '_') updatePreference('postfix', '');
+                updatePreference('keepOriginalName', enabled);
               }} />
               Keep original name
             </label>
@@ -280,7 +370,7 @@ export default function App() {
           <div className="flex items-center gap-1" title="Additional padding buffer digits">
             <Settings2 size={14} className="text-gray-500 dark:text-gray-400" />
             <span className="text-xs text-gray-500 dark:text-gray-400">Buffer (+):</span>
-            <input type="number" min="0" max="5" value={manualPaddingOffset} onChange={(e) => setManualPaddingOffset(Number(e.target.value))} className="w-12 px-1 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded text-center" />
+            <input type="number" min="0" max="5" value={manualPaddingOffset} onChange={(e) => updatePreference('manualPaddingOffset', Number(e.target.value))} className="w-12 px-1 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded text-center" />
           </div>
           <span className="text-xs font-mono bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">
             Padding: {effectivePadding} digits
@@ -304,10 +394,10 @@ export default function App() {
 
             {isThemeMenuOpen && (
               <div className="absolute left-0 mt-2 w-36 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-xl z-50 py-1 text-sm">
-                <button onClick={() => { setTheme('light'); setIsThemeMenuOpen(false); }} className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${theme === 'light' ? 'font-bold text-blue-600 dark:text-blue-400' : ''}`}>
+                <button onClick={() => { updatePreference('theme', 'light'); setIsThemeMenuOpen(false); }} className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${theme === 'light' ? 'font-bold text-blue-600 dark:text-blue-400' : ''}`}>
                   <Sun size={14} className="text-amber-500" /> Light
                 </button>
-                <button onClick={() => { setTheme('dark'); setIsThemeMenuOpen(false); }} className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${theme === 'dark' ? 'font-bold text-blue-600 dark:text-blue-400' : ''}`}>
+                <button onClick={() => { updatePreference('theme', 'dark'); setIsThemeMenuOpen(false); }} className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${theme === 'dark' ? 'font-bold text-blue-600 dark:text-blue-400' : ''}`}>
                   <Moon size={14} className="text-blue-400" /> Dark
                 </button>
               </div>
@@ -382,8 +472,18 @@ export default function App() {
         )}
       </main>
 
-      <footer className="bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-6 py-4 flex justify-between items-center shadow-inner">
-        <span className="text-sm text-gray-600 dark:text-gray-400">Total: <b>{images.length}</b> images in folder</span>
+      <footer className="bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-6 py-4 flex flex-wrap justify-between items-center gap-3 shadow-inner">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Total: <b>{images.length}</b> images in folder</span>
+          <button onClick={handleCheckForUpdates} className="flex items-center gap-1.5 px-2 py-1.5 border dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-xs cursor-pointer" title="Check GitHub for a new version">
+            <RefreshCw size={14} /> Check for updates
+          </button>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap" title="Check, download, and install updates automatically when FolderSort starts">
+            <input type="checkbox" checked={automaticUpdates} onChange={(e) => updatePreference('automaticUpdates', e.target.checked)} />
+            Automatic updates
+          </label>
+          {updateStatus && <span className="text-xs text-gray-500 dark:text-gray-400" role="status">{updateStatus}</span>}
+        </div>
         <button onClick={handleApplyRename} disabled={images.length === 0} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-medium shadow transition cursor-pointer">
           <Check size={18} /> Apply changes to disk
         </button>
