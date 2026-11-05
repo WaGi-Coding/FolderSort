@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://i.imgur.com/ukDkdWe.gif" width="300">
+  <img src="https://i.imgur.com/ukDkdWe.gif">
 </p>
 
 
