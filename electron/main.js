@@ -7,8 +7,8 @@ function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 590,
-    minHeight: 515,
+    minWidth: 720,
+    minHeight: 720,
     title: 'FolderSort',
     icon: path.join(__dirname, '../public/icon.ico'),
     webPreferences: {
@@ -80,11 +80,12 @@ ipcMain.handle('dir:read-images', async (_, folderPath) => {
 });
 
 // 3. Batch-Renaming ausführen
-ipcMain.handle('files:rename', async (_, { folderPath, items, prefix, postfix, padding }) => {
+ipcMain.handle('files:rename', async (_, { folderPath, items, prefix, postfix, padding, keepOriginalName }) => {
   try {
     const tempRenames = items.map((item, index) => {
       const numStr = String(index + 1).padStart(padding, '0');
-      const newFileName = `${prefix}${numStr}${postfix}${item.extension}`;
+      const originalBaseName = item.originalName.slice(0, -item.extension.length);
+      const newFileName = `${prefix}${numStr}${postfix}${keepOriginalName ? originalBaseName : ''}${item.extension}`;
       const oldFullPath = item.path;
       const tempFullPath = path.join(folderPath, `temp_${Date.now()}_${index}${item.extension}`);
       const finalFullPath = path.join(folderPath, newFileName);
