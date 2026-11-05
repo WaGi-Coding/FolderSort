@@ -10,7 +10,7 @@ declare global {
     electronAPI: {
       openDirectory: () => Promise<string | null>;
       readImages: (folderPath: string) => Promise<{ success: boolean; images: any[]; error?: string }>;
-      renameFiles: (data: { folderPath: string; items: any[]; prefix: string; postfix: string; padding: number }) => Promise<{ success: boolean; error?: string }>;
+      renameFiles: (data: { folderPath: string; items: any[]; prefix: string; postfix: string; padding: number; keepOriginalName: boolean }) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -65,6 +65,7 @@ export default function App() {
 
   const [prefix, setPrefix] = useState<string>('image_');
   const [postfix, setPostfix] = useState<string>('');
+  const [keepOriginalName, setKeepOriginalName] = useState<boolean>(false);
   const [manualPaddingOffset, setManualPaddingOffset] = useState<number>(0);
 
   const [gridCols, setGridCols] = useState<number>(6);
@@ -197,10 +198,11 @@ export default function App() {
     const map = new Map<string, string>();
     images.forEach((item, index) => {
       const paddedNum = String(index + 1).padStart(effectivePadding, '0');
-      map.set(item.id, `${prefix}${paddedNum}${postfix}${item.extension}`);
+      const originalBaseName = item.originalName.slice(0, -item.extension.length);
+      map.set(item.id, `${prefix}${paddedNum}${postfix}${keepOriginalName ? originalBaseName : ''}${item.extension}`);
     });
     return map;
-  }, [images, prefix, postfix, effectivePadding]);
+  }, [images, prefix, postfix, keepOriginalName, effectivePadding]);
 
   const handleApplyRename = async () => {
     if (!folderPath || images.length === 0) return;
@@ -213,6 +215,7 @@ export default function App() {
       prefix,
       postfix,
       padding: effectivePadding,
+      keepOriginalName,
     });
 
     if (res.success) {
@@ -264,6 +267,15 @@ export default function App() {
           <div className="flex items-center gap-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">Suffix:</span>
             <input type="text" value={postfix} onChange={(e) => setPostfix(e.target.value)} className="w-16 px-2 py-1 text-sm bg-white dark:bg-gray-800 border dark:border-gray-600 rounded" />
+            <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap" title="Append each file's current name before its extension">
+              <input type="checkbox" checked={keepOriginalName} onChange={(e) => {
+                const enabled = e.target.checked;
+                if (enabled && !postfix) setPostfix('_');
+                if (!enabled && postfix === '_') setPostfix('');
+                setKeepOriginalName(enabled);
+              }} />
+              Keep original name
+            </label>
           </div>
           <div className="flex items-center gap-1" title="Additional padding buffer digits">
             <Settings2 size={14} className="text-gray-500 dark:text-gray-400" />
