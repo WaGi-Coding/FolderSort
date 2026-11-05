@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  ![Drag&Drop](https://i.imgur.com/ukDkdWe.gif)
+  <img src="https://i.imgur.com/ukDkdWe.gif" width="300">
 </p>
 
 
